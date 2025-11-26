@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>BitBullz Evolution | Unity WebGL</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+
+    <!-- AdsGram SDK (common host). Keep this first so SDK can load early.
+         If AdsGram gives a different script URL for you, replace this URL with theirs. -->
+    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+
+    <style>
+        :root {
+            touch-action: pan-x pan-y; /* allow panning, block pinch zoom */
+            height: 100%;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #unity-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            touch-action: none;
+            background: black;
+            touch-action: none; /* blocks pinch zoom + scroll bounce */
+            overscroll-behavior: none; /* prevents sneaky zoom on edges */
+        }
+
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+            #loading img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover; /* fill screen */
+                object-position: center;
+            }
+    </style>
+</head>
+<body>
+    <canvas id="unity-canvas" tabindex="-1"></canvas>
+      <div id="loading">
+        <img src="TemplateData/PreLoadingScreen_1.jpg" alt="Loading...">
+    </div>
+
+    <!-- PlayDeck bridge (our unified bridge) -->
+    <script src="playdeckBridge.js"></script>
+
+    <script>
+        function getTelegramData() {
+            // Parse Telegram data from hash
+            if (window.location.hash) {
+                const hash = window.location.hash.substring(1);
+
+                try {
+                    const params = new URLSearchParams(hash);
+                    const tgWebAppData = params.get('tgWebAppData');
+
+                    if (tgWebAppData) {
+                        const tgParams = new URLSearchParams(tgWebAppData);
+                        const userParam = tgParams.get('user');
+
+                        if (userParam) {
+                            const decodedUser = decodeURIComponent(userParam);
+                            const userData = JSON.parse(decodedUser);
+                            sendToUnity(userData);
+                            return;
+                        }
+                    }
+
+                    // If no tgWebAppData param, try parsing hash directly
+                    const tgParams = new URLSearchParams(hash);
+                    const userParam = tgParams.get('user');
+                    if (userParam) {
+                        const decodedUser = decodeURIComponent(userParam);
+                        const userData = JSON.parse(decodedUser);
+                        sendToUnity(userData);
+                        return;
+                    }
+                } catch (e) {
+                    console.log('Error parsing Telegram data:', e);
+                }
+            }
+
+            // Fallback if no Telegram data found
+            useFallback();
+        }
+
+        function useFallback() {
+            const fallbackUser = {
+                id: Date.now(),
+                username: 'telegram_user',
+                first_name: 'Telegram',
+                last_name: 'User',
+                is_premium: false
+            };
+            sendToUnity(fallbackUser);
+        }
+
+        function sendToUnity(userData) {
+            if (window.unityInstance && typeof window.unityInstance.SendMessage === 'function') {
+                window.unityInstance.SendMessage('LoginManager', 'OnTelegramUserFullReceived', JSON.stringify(userData));
+            } else {
+                window.pendingUserData = userData;
+                setTimeout(() => sendToUnity(userData), 1000);
+            }
+        }
+
+        // wait DOMContentLoaded to create unity instance
+        window.addEventListener('DOMContentLoaded', function () {
+            const canvas = document.querySelector("#unity-canvas");
+            const loadingElement = document.querySelector("#loading");
+            const buildUrl = "Build";
+            const loaderUrl = buildUrl + "/WebglBuild.loader.js";
+
+            function setAdsStatus(text, color) {
+                if (!adsStatus) return;
+                adsStatus.innerHTML = text;
+                if (color) adsStatus.style.background = color;
+            }
+
+            const hideLoading = () => {
+                if (loadingElement) loadingElement.style.display = 'none';
+            };
+
+            const pixelRatioCap = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent)
+                ? Math.min(window.devicePixelRatio, 1.5)
+                : window.devicePixelRatio;
+
+            const config = {
+                dataUrl: buildUrl + "/WebglBuild.data",
+                frameworkUrl: buildUrl + "/WebglBuild.framework.js",
+                codeUrl: buildUrl + "/WebglBuild.wasm",
+                streamingAssetsUrl: "StreamingAssets",
+                companyName: "Artnroll Games",
+                productName: "BitBullz Evolution",
+                productVersion: "0.4",
+                devicePixelRatio: pixelRatioCap,
+                showBanner: (msg, type) => {
+                }
+            };
+
+            const script = document.createElement("script");
+            script.src = loaderUrl;
+            script.onload = () => {
+                createUnityInstance(canvas, config, (progress) => {
+                    const progressPercent = Math.round(progress * 100);
+                    if (window.PlayDeck_SetLoading) {
+                        try { window.PlayDeck_SetLoading(progressPercent); } catch (e) { }
+                    }
+                }).then((unityInstance) => {
+                    console.log("Unity loaded");
+                    window.unityInstance = unityInstance;
+                    hideLoading();
+
+                    // give the bridge the unity instance if it has init method
+                    if (window.playDeckBridge && typeof window.playDeckBridge.init === 'function') {
+                        try { window.playDeckBridge.init(unityInstance); } catch (e) { console.warn(e); }
+                    }
+
+                    // Get Telegram data after Unity loads
+                    setTimeout(getTelegramData, 500);
+
+                    // Force get Telegram username once loaded (safe if function exists)
+                    if (typeof window.getTelegramUsername === 'function') {
+                        try { window.getTelegramUsername('LoginManager', 'OnUsernameReceived'); } catch (e) { }
+                    }
+                }).catch(err => {
+                    console.error("Unity create failed:", err);
+                    if (loadingElement) {
+                        loadingElement.innerHTML = "Failed to load. Open console for details.";
+                        loadingElement.style.color = "red";
+                    }
+                });
+            };
+            script.onerror = (err) => {
+                console.error("Failed loading Unity loader:", err);
+                if (loadingElement) {
+                    loadingElement.innerHTML = "Failed to load. Refresh the page.";
+                    loadingElement.style.color = "red";
+                }
+            };
+            document.body.appendChild(script);
+        });
+
+        // Override the function to use our method
+        window.getTelegramUserFull = function (unityObjectName, callbackMethod) {
+            getTelegramData();
+        };
+    </script>
+</body>
+</html>
