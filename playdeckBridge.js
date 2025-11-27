@@ -75,12 +75,20 @@
     // ===== TELEGRAM STARS INTEGRATION =====
 
     const starsIntegration = {
-        // Check if Telegram Stars are available
+        BACKEND_URL: 'https://telegram-server-payment.onrender.com',
+
+        // check if telegram stars are available
         isAvailable() {
             return !!(window.Telegram && window.Telegram.WebApp);
         },
 
-        // Main purchase function - SIMPLIFIED: No backend verification
+        // Get telegram user ID
+        getUserId() {
+            const user = window.Telegram?.WebApp?.initDataUnsafe?.user;
+            return user ? user.id : null;
+        },
+
+        // main purchase function
         async purchaseItem(itemId, starsCost, itemName, itemDescription) {
             safeLog('Telegram Stars: purchaseItem called for', itemId, 'cost:', starsCost);
 
@@ -90,160 +98,72 @@
                 return { success: false, error: error };
             }
 
-            try {
-                // Just create Telegram payment - no backend verification needed
-                const paymentResult = await this.createTelegramPayment(itemId, starsCost, itemName, itemDescription);
-
-                // Return whatever Telegram tells us - we trust it completely
-                return paymentResult;
-
-            } catch (error) {
-                safeError('Telegram Stars: Purchase error', error);
-                return { success: false, error: error.message };
+            const userId = this.getUserId();
+            if (!userId) {
+                return { success: false, error: 'User not identified'}
             }
-        },
-
-        // Create Telegram payment - METHOD 1 (MainButton)
-        createTelegramPayment(itemId, starsCost, itemName, itemDescription) {
-            return new Promise((resolve) => {
-                safeLog('Telegram Stars: Creating payment for', itemId, 'cost:', starsCost);
-
-                // Check if Telegram WebApp is available
-                if (!window.Telegram?.WebApp) {
-                    resolve({ success: false, error: 'Telegram WebApp not available' });
-                    return;
-                }
-
-                // Check if MainButton is available
-                if (!window.Telegram.WebApp.MainButton) {
-                    resolve({ success: false, error: 'Telegram payments not supported' });
-                    return;
-                }
-
-                // Check if user is identified
-                const user = window.Telegram.WebApp.initDataUnsafe?.user;
-                if (!user?.id) {
-                    resolve({ success: false, error: 'User not identified' });
-                    return;
-                }
-
-                safeLog('Starting Telegram Stars MainButton payment flow...');
-
-                // Use MainButton for direct Stars payment
-                this.setupMainButtonPayment(itemId, starsCost, itemName, resolve);
-            });
-        },
-
-        // Setup MainButton for direct payment
-        setupMainButtonPayment(itemId, starsCost, itemName, resolve) {
-            try {
-                // Configure the MainButton
-                window.Telegram.WebApp.MainButton.setText(`Purchase ${itemName} - ${starsCost} ⭐`);
-                window.Telegram.WebApp.MainButton.color = '#2481cc'; // Telegram blue
-                window.Telegram.WebApp.MainButton.textColor = '#ffffff';
-                window.Telegram.WebApp.MainButton.show();
-
-                safeLog('MainButton shown with payment option');
-
-                // Create one-time click handler
-                const paymentHandler = () => {
-                    safeLog('Telegram Stars: Payment button clicked by user');
-
-                    // Disable button immediately to prevent double clicks
-                    window.Telegram.WebApp.MainButton.showProgress();
-
-                    // Process the payment directly with Telegram
-                    this.processTelegramStarsPayment(itemId, starsCost)
-                        .then(result => {
-                            resolve(result);
-                        })
-                        .finally(() => {
-                            // Clean up
-                            window.Telegram.WebApp.MainButton.offClick(paymentHandler);
-                            window.Telegram.WebApp.MainButton.hide();
-                            window.Telegram.WebApp.MainButton.hideProgress();
-                        });
-                };
-
-                // Attach click handler
-                window.Telegram.WebApp.MainButton.onClick(paymentHandler);
-
-                // Auto-cancel after 2 minutes if user doesn't act
-                setTimeout(() => {
-                    if (window.Telegram.WebApp.MainButton.isVisible) {
-                        safeLog('Payment timeout - cancelling');
-                        window.Telegram.WebApp.MainButton.offClick(paymentHandler);
-                        window.Telegram.WebApp.MainButton.hide();
-                        resolve({ success: false, error: 'Payment timeout - please try again' });
-                    }
-                }, 120000); // 2 minutes
-
-            } catch (error) {
-                safeError('MainButton setup failed:', error);
-                // Ensure button is hidden on error
-                try { window.Telegram.WebApp.MainButton.hide(); } catch (e) { }
-                resolve({ success: false, error: 'Payment setup failed: ' + error.message });
-            }
-        },
-
-        // Process Telegram Stars payment - SIMPLIFIED: No backend calls
-        async processTelegramStarsPayment(itemId, starsCost) {
-            safeLog('Processing Telegram Stars payment for', itemId, 'amount:', starsCost);
-
-            // In production: This is where actual Telegram Stars transfer happens
-            // Telegram handles everything - we just trust their response
 
             try {
-                // For now, simulate Telegram's payment processing
-                const result = await this.simulateTelegramPayment(itemId, starsCost);
+                safeLog('Creating invoice via backend');
+
+                // call backend to create telegram invoice
+                const result = await this.createInvoiceViaBackend(userId, itemId, starsCost, itemName, itemDescription);
                 return result;
             } catch (error) {
-                safeError('Telegram payment error:', error);
-                return { success: false, error: 'Payment processing failed' };
+                safeError('Telegram Stars: Purchase error', error)
+                return {success: false, error: error.message};
             }
         },
 
-        // Simulate Telegram payment (replace with real Telegram API in production)
-        simulateTelegramPayment(itemId, starsCost) {
-            return new Promise((resolve) => {
-                safeLog('Simulating Telegram Stars payment...');
+        // create invoice by calling our backend
+        async createInvoiceViaBackend(userId, itemId, starsCost, itemName, itemDescription) {
+            try {
+                safeLog('Calling backend to create invoice...');
 
-                // Simulate Telegram processing delay
-                setTimeout(() => {
-                    // 85% success rate for realistic testing
-                    const success = Math.random() > 0.15;
+                const response = await fetch(`${this.BACKEND_URL}/create-invoice`, {                    method: 'POST',
+                    headers:{
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        item_id: itemId,
+                        amount: starsCost,
+                        title: itemName,
+                        description: itemDescription
+                    })
+                });
 
-                    if (success) {
-                        const paymentId = 'telegram_stars_' + Date.now();
-                        safeLog('✅ Telegram Stars: PAYMENT SUCCESS - Payment ID:', paymentId);
-                        resolve({
-                            success: true,
-                            payment_id: paymentId,
-                            item_id: itemId,
-                            message: 'Payment completed successfully via Telegram Stars'
-                        });
-                    } else {
-                        // Simulate Telegram payment failures
-                        const errors = [
-                            'Insufficient Stars balance',
-                            'Payment was cancelled',
-                            'Network error - please try again',
-                            'Transaction declined by Telegram'
-                        ];
-                        const randomError = errors[Math.floor(Math.random() * errors.length)];
+                if (!response.ok) {
+                    throw new Error(`Backend error: ${response.status}`);
+                }
 
-                        safeLog('❌ Telegram Stars: PAYMENT FAILED -', randomError);
-                        resolve({
-                            success: false,
-                            error: randomError
-                        });
-                    }
-                }, 1500); // 1.5 second processing time (realistic)
-            });
-        }
+                const result = await response.json();
+                safeLog('Backend response:', result);
 
-        // REMOVED: verifyPaymentWithBackend() - No backend needed!
-    };
+                if (result.success) {
+                    // invoice was sent to user by telegram
+                    // now we wait for payment
+                    return {
+                        success: true,
+                        message: 'Invoice sent! Check your Telegram chat with the bot.',
+                        item_id: itemId,
+                        invoice_id: result.invoice_id
+                    };
+                } else {
+                    return {
+                        success: false,
+                        error: result.error || 'Failed to create invoice'
+                    };
+                }
+            } catch (error) {
+                safeError('Backend call failed:', error);
+                return {
+                    success: false,
+                    error: 'Could not connect to payment server' + error.message
+                };
+            }
+        } 
+    }
 
     // ===== SINGLE FUNCTION EXPOSURE =====
 
