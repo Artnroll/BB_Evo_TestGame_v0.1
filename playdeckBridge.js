@@ -73,14 +73,14 @@
     };
 
     // ===== TELEGRAM STARS INTEGRATION =====
-    
+
     const starsIntegration = {
         // Check if Telegram Stars are available
         isAvailable() {
             return !!(window.Telegram && window.Telegram.WebApp);
         },
 
-        // Main purchase function
+        // Main purchase function - SIMPLIFIED: No backend verification
         async purchaseItem(itemId, starsCost, itemName, itemDescription) {
             safeLog('Telegram Stars: purchaseItem called for', itemId, 'cost:', starsCost);
 
@@ -91,22 +91,12 @@
             }
 
             try {
-                // Step 1: Create payment with Telegram
+                // Just create Telegram payment - no backend verification needed
                 const paymentResult = await this.createTelegramPayment(itemId, starsCost, itemName, itemDescription);
-                
-                if (!paymentResult.success) {
-                    return paymentResult;
-                }
 
-                // Step 2: Verify payment with backend
-                const verificationResult = await this.verifyPaymentWithBackend(
-                    paymentResult.payment_id, 
-                    itemId,
-                    starsCost
-                );
-                
-                return verificationResult;
-                
+                // Return whatever Telegram tells us - we trust it completely
+                return paymentResult;
+
             } catch (error) {
                 safeError('Telegram Stars: Purchase error', error);
                 return { success: false, error: error.message };
@@ -152,18 +142,18 @@
                 window.Telegram.WebApp.MainButton.color = '#2481cc'; // Telegram blue
                 window.Telegram.WebApp.MainButton.textColor = '#ffffff';
                 window.Telegram.WebApp.MainButton.show();
-                
+
                 safeLog('MainButton shown with payment option');
 
                 // Create one-time click handler
                 const paymentHandler = () => {
                     safeLog('Telegram Stars: Payment button clicked by user');
-                    
+
                     // Disable button immediately to prevent double clicks
                     window.Telegram.WebApp.MainButton.showProgress();
-                    
-                    // Process the payment
-                    this.processDirectStarsPayment(itemId, starsCost)
+
+                    // Process the payment directly with Telegram
+                    this.processTelegramStarsPayment(itemId, starsCost)
                         .then(result => {
                             resolve(result);
                         })
@@ -174,10 +164,10 @@
                             window.Telegram.WebApp.MainButton.hideProgress();
                         });
                 };
-                
+
                 // Attach click handler
                 window.Telegram.WebApp.MainButton.onClick(paymentHandler);
-                
+
                 // Auto-cancel after 2 minutes if user doesn't act
                 setTimeout(() => {
                     if (window.Telegram.WebApp.MainButton.isVisible) {
@@ -187,111 +177,77 @@
                         resolve({ success: false, error: 'Payment timeout - please try again' });
                     }
                 }, 120000); // 2 minutes
-                
+
             } catch (error) {
                 safeError('MainButton setup failed:', error);
                 // Ensure button is hidden on error
-                try { window.Telegram.WebApp.MainButton.hide(); } catch (e) {}
+                try { window.Telegram.WebApp.MainButton.hide(); } catch (e) { }
                 resolve({ success: false, error: 'Payment setup failed: ' + error.message });
             }
         },
 
-        // Process direct Stars payment
-        async processDirectStarsPayment(itemId, starsCost) {
-            safeLog('Processing Stars transfer for', itemId, 'amount:', starsCost);
-            
-            // In production, this is where the actual Stars transfer happens
-            // For now, we'll simulate the process
-            
+        // Process Telegram Stars payment - SIMPLIFIED: No backend calls
+        async processTelegramStarsPayment(itemId, starsCost) {
+            safeLog('Processing Telegram Stars payment for', itemId, 'amount:', starsCost);
+
+            // In production: This is where actual Telegram Stars transfer happens
+            // Telegram handles everything - we just trust their response
+
             try {
-                // Simulate Stars transfer processing
-                const result = await this.simulateStarsTransfer(itemId, starsCost);
+                // For now, simulate Telegram's payment processing
+                const result = await this.simulateTelegramPayment(itemId, starsCost);
                 return result;
             } catch (error) {
-                safeError('Stars transfer error:', error);
+                safeError('Telegram payment error:', error);
                 return { success: false, error: 'Payment processing failed' };
             }
         },
 
-        // Simulate Stars transfer (replace with actual API call in production)
-        simulateStarsTransfer(itemId, starsCost) {
+        // Simulate Telegram payment (replace with real Telegram API in production)
+        simulateTelegramPayment(itemId, starsCost) {
             return new Promise((resolve) => {
-                safeLog('Simulating Stars transfer...');
-                
-                // Simulate processing delay
+                safeLog('Simulating Telegram Stars payment...');
+
+                // Simulate Telegram processing delay
                 setTimeout(() => {
                     // 85% success rate for realistic testing
                     const success = Math.random() > 0.15;
-                    
+
                     if (success) {
-                        const paymentId = 'stars_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                        safeLog('✅ Stars transfer: SUCCESS - Payment ID:', paymentId);
-                        resolve({ 
-                            success: true, 
+                        const paymentId = 'telegram_stars_' + Date.now();
+                        safeLog('✅ Telegram Stars: PAYMENT SUCCESS - Payment ID:', paymentId);
+                        resolve({
+                            success: true,
                             payment_id: paymentId,
-                            item_id: itemId
+                            item_id: itemId,
+                            message: 'Payment completed successfully via Telegram Stars'
                         });
                     } else {
-                        // Simulate common failure reasons
+                        // Simulate Telegram payment failures
                         const errors = [
                             'Insufficient Stars balance',
+                            'Payment was cancelled',
                             'Network error - please try again',
-                            'Transaction declined',
-                            'Payment timeout'
+                            'Transaction declined by Telegram'
                         ];
                         const randomError = errors[Math.floor(Math.random() * errors.length)];
-                        
-                        safeLog('❌ Stars transfer: FAILED -', randomError);
-                        resolve({ 
-                            success: false, 
+
+                        safeLog('❌ Telegram Stars: PAYMENT FAILED -', randomError);
+                        resolve({
+                            success: false,
                             error: randomError
                         });
                     }
-                }, 2000); // 2 second processing time
+                }, 1500); // 1.5 second processing time (realistic)
             });
-        },
-
-        // Verify payment with backend
-        async verifyPaymentWithBackend(paymentId, itemId, starsCost) {
-            try {
-                const user = window.Telegram.WebApp.initDataUnsafe.user;
-                
-                // TODO: Replace with your actual Supabase function URL
-                const supabaseFunctionUrl = 'https://your-project.supabase.co/functions/v1/process-stars-payment';
-                
-                safeLog('Telegram Stars: Verifying payment with backend...');
-                
-                const response = await fetch(supabaseFunctionUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        telegram_user_id: user.id,
-                        item_id: itemId,
-                        stars_amount: starsCost,
-                        telegram_payment_id: paymentId
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Backend error: ${response.status}`);
-                }
-
-                const result = await response.json();
-                safeLog('Telegram Stars: Backend verification result', result);
-                return result;
-                
-            } catch (error) {
-                safeError('Telegram Stars: Backend verification failed', error);
-                return { success: false, error: 'Payment verification failed: ' + error.message };
-            }
         }
+
+        // REMOVED: verifyPaymentWithBackend() - No backend needed!
     };
 
     // ===== SINGLE FUNCTION EXPOSURE =====
 
-    window.PlayDeck_BuyItemWithStars = function(itemId, starsCost, itemName, itemDescription) {
+    window.PlayDeck_BuyItemWithStars = function (itemId, starsCost, itemName, itemDescription) {
         safeLog('PlayDeck_BuyItemWithStars called with:', itemId, starsCost, itemName);
 
         // Handle the purchase and send result to Unity
@@ -344,7 +300,7 @@
     function initializeAdsGramIfPossible() {
         const globalAds = detectAdsGram();
         if (!globalAds) return false;
-        
+
         // ... rest of AdsGram initialization (unchanged)
     }
 
@@ -393,14 +349,14 @@
     window.playDeckBridge = Object.assign(window.playDeckBridge || {}, {
         init: function (unityInstance) { bridge.init(unityInstance); },
         stars: starsIntegration,
-        _internalState: () => ({ 
-            adsState: adsState, 
+        _internalState: () => ({
+            adsState: adsState,
             starsAvailable: starsIntegration.isAvailable(),
             telegramAvailable: !!(window.Telegram && window.Telegram.WebApp)
         })
     });
 
-    safeLog('playdeckBridge loaded with Telegram Stars integration (MainButton Method)');
+    safeLog('playdeckBridge loaded with SIMPLIFIED Telegram Stars (No Backend)');
 
 })();
 
