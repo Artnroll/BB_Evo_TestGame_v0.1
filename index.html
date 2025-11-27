@@ -7,6 +7,8 @@
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
 
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
     <!-- AdsGram SDK (common host). Keep this first so SDK can load early.
          If AdsGram gives a different script URL for you, replace this URL with theirs. -->
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
@@ -67,10 +69,31 @@
 
     <script>
         function getTelegramData() {
-            // Parse Telegram data from hash
+            // Method 1: Use official Telegram WebApp API
+            if (window.Telegram && window.Telegram.WebApp) {
+                const webApp = window.Telegram.WebApp;
+                console.log('Telegram WebApp detected:', {
+                    version: webApp.version,
+                    platform: webApp.platform,
+                    initData: webApp.initDataUnsafe
+                });
+
+                // Expand the WebApp to full height (recommended)
+                webApp.expand();
+
+                const user = webApp.initDataUnsafe.user;
+                if (user) {
+                    console.log('Telegram user data:', user);
+                    sendToUnity(user);
+                    return;
+                } else {
+                    console.log('No user data in Telegram WebApp');
+                }
+            }
+
+            // Method 2: Fallback to your custom hash parsing
             if (window.location.hash) {
                 const hash = window.location.hash.substring(1);
-
                 try {
                     const params = new URLSearchParams(hash);
                     const tgWebAppData = params.get('tgWebAppData');
@@ -101,7 +124,7 @@
                 }
             }
 
-            // Fallback if no Telegram data found
+            // Final fallback if no Telegram data found
             useFallback();
         }
 
